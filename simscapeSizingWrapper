@@ -1,0 +1,109 @@
+          
+    clc;
+    clearvars;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%      
+% User Inputs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+
+    % SIMSCAPE Model information   
+    
+        modelName = 'sizingWrapperDemo'; 
+        stopTime = 5;            % simulation time (s)
+        x = [1e-4;1e-4];         % initial guesses at orfice area(m^2)
+        max = [0.01;0.01];       % maximum orifice area (m^2)
+        min = [1e-4;1e-4];       % minimum orifice area (m^2)
+        target = [2.7; 2.3];     % target flow in each branch(kg/s)
+   
+        cc = 10^-2;              % Convergence criteria (kg/s)
+        h = 1e-3;                % numerical derivative step size
+        max_iterations = 10;     % Maximum nunmber of sizing iterations
+        
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+% Load and configure model %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+
+    open_system(modelName)
+    
+     % Simulation configuration
+        activeConfigObj = getActiveConfigSet(modelName);  
+        set_param(activeConfigObj,'StopTime',num2str(stopTime));  % length 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+% Initialization %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+
+    J = zeros(3);             % Jacbian matrix pre-allocation
+    Residual = zeros(3,1);    % Residual matrix
+    k = 1;                    % Solver iteration counter
+    i = 1;                    % Counter for building Jacobian
+    ii =1;                    % Counter for applying limits
+    converged = 0;            % convergence variable 
+        
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%    
+% SIZING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+    
+    while k<max_iterations
+        
+        % Get outputs at the current guess value
+                      
+            sim(modelName)
+            
+        % Compare outputs to the target values
+        
+            Residual(1,1) = target(1,1) - ans.flow1;
+            Residual(2,1) = target(2,1) - ans.flow2;
+            Residual(3,1) = target(3,1) - ans.flow3;
+
+        % Decide if outputs are close enough to desired values
+            
+            if (abs(Residual(1,1))<cc)&&(abs(Residual(2,1))<cc)&&(abs(Residual(3,1))<cc)
+                converged = 1;
+                break
+            end
+        
+        % Numerical Derivatives for building Jacobian
+    
+            for i = 1:3
+                
+                % Increase current guess value for numerical derivative
+                    x(i,1) = x(i,1)+h;
+                    
+                % Run the model
+                    sim(modelName)
+                
+                % Evaluate Jacobian entry 
+                    J(1,i) = ((target(1,1) - ans.flow1)-Residual(1,1))/h;       
+                    J(2,i) = ((target(2,1) - ans.flow2)-Residual(2,1))/h;
+                    J(3,i) = ((target(3,1) - ans.flow3)-Residual(3,1))/h;
+                    
+                % Return current guess value to previous value
+                    x(i,1) = x(i,1)-h;
+
+            end
+        
+        % Find next guess values
+        
+            dx = J\Residual;
+
+            x(1,1) = x(1,1) - dx(1,1);
+            x(2,1) = x(2,1) - dx(2,1);
+            x(3,1) = x(3,1) - dx(3,1);
+            
+            % Apply bounds
+        
+                for ii = 1:3
+                    if x(ii,1) >= max(ii,1)
+                        x(ii,1) = max(ii,1)-max(ii,1)*.01;
+                    elseif x(ii,1) <= 0
+                        x(ii,1) = min(ii,1);
+                    end
+                end     
+            
+        % Counter
+               
+            k=k+1;
+        
+    end
+
